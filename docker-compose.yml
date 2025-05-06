@@ -1,0 +1,101 @@
+version: '3.9'
+
+networks:
+  microservice-net:
+    name: microservice-net
+    external: true
+
+services:
+  mysql:
+    platform: linux/x86_64
+    image: mysql:8.0.26
+    restart: always
+    container_name: mysql
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: video_games
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: mysqladmin ping -h 127.0.0.1 -u root --password=root
+    volumes:
+      - /Users/tushar/Development/DockerMount/mysql-1:/var/lib/mysql
+    networks:
+      - microservice-net
+
+  eureka-server:
+    build: ./server-registry
+    container_name: eureka-server
+    image: eureka-server:latest
+    environment:
+      - SERVER_PORT=8761
+      - EUREKA_INSTANCE_HOSTNAME=host.docker.internal
+      - EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
+    depends_on:
+      - mysql
+    ports:
+      - "8761:8761"
+    networks:
+      - microservice-net
+
+  games-library:
+    build: ./games-library
+    container_name: games-library
+    image: games-library:latest
+    depends_on:
+      - eureka-server
+      - mysql
+    environment:
+      - DB_URL=mysql
+      - DB_USER=root
+      - DB_PASS=root
+      - SERVER_PORT=8081
+      - DEFAULT_ZONE=http://eureka-server:8761/eureka
+      - EUREKA_INSTANCE_HOSTNAME=host.docker.internal
+      - EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
+    command: sh -c "sleep 20 && java -jar /app/games-library.jar"
+    ports:
+      - "8081:8081"
+    networks:
+      - microservice-net
+
+  games-genre:
+    build: ./game-genre
+    container_name: games-genre
+    image: games-genre:latest
+    depends_on:
+      - eureka-server
+      - mysql
+    command: sh -c "sleep 20 && java -jar /app/games-genre.jar"
+    environment:
+      - DB_URL=mysql
+      - DB_USER=root
+      - DB_PASS=root
+      - SERVER_PORT=8082
+      - DEFAULT_ZONE=http://eureka-server:8761/eureka
+      - EUREKA_INSTANCE_HOSTNAME=host.docker.internal
+      - EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
+    ports:
+      - "8082:8082"
+    networks:
+      - microservice-net
+
+  games-aggregator:
+    build: ./game-aggregator-service
+    container_name: games-aggregator
+    image: games-aggregator:latest
+    environment:
+      - SERVER_PORT=8085
+      - DEFAULT_ZONE=http://eureka-server:8761/eureka
+      - EUREKA_INSTANCE_HOSTNAME=host.docker.internal
+      - EUREKA_INSTANCE_PREFER_IP_ADDRESS=true
+    depends_on:
+      - eureka-server
+      - mysql
+      - games-library
+      - games-genre
+    ports:
+      - "8085:8085"
+    networks:
+      - microservice-net
